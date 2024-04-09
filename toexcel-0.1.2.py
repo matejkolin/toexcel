@@ -85,8 +85,6 @@ class GetLog:
                             else:
                                 resource_dict[f'Stor_attr_{idx}'] = attributes_data
 
-                            resource_dicts.append(resource_dict)
-
 
                         resource_dicts.append(resource_dict)
 
@@ -98,6 +96,8 @@ class GetLog:
                 df = pd.DataFrame(resource_dicts)
 
                 df.to_csv(output_path, index=False)
+            else:
+                messagebox.showerror("Log file empty")
 
 
     def browse_files(self):
@@ -130,7 +130,7 @@ class GetLog:
         if not output_path:
             messagebox.showerror("Error","No output file selected. Exiting.")
             return
-
+        
         self.extract_resources(file, output_path)
         messagebox.showinfo("Extraction completed and saved to", output_path)
 
