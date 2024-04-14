@@ -1,2 +1,6 @@
-/id_rsa
-/variables.py
+id_rsa
+variables.py
+*.exe
+*.spec
+/build/
+/dist

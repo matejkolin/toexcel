@@ -17,6 +17,7 @@ class GetLog:
         self.sshclient=self.sshConnect()
         self.sftp_client = self.sshclient.open_sftp()
         self.remote_file = None
+        self.listOfFiles = []
 
     def sshConnect(self):
             client = paramiko.SSHClient()
@@ -37,67 +38,71 @@ class GetLog:
     def extract_resources(self,file, output_path):
         
         resource_dicts = []
+        # TODO iterate through all files returned from the browse function
+        fileNumber=len(self.listOfFiles)
+        for i in range(fileNumber):
+            print("Working on file:",i)
+            for line in file:
+                if not line.strip():
+                    continue
+                timestamp, orderNo, resource_data = line.strip().split("|")
+                timestamp = timestamp.strip()
 
-        for line in file:
-            if not line.strip():
-                continue
-            timestamp, orderNo, resource_data = line.strip().split("|")
-            timestamp = timestamp.strip()
-
-            resources = re.findall(r'Resources:{([^}]*(?:(?!Resources:).)*)}', resource_data)
-            if resources:
-                for resource in resources:
-                    try:
-                        resource_dict = {}
-                        
-                        resource_dict['Timestamp'] = timestamp
-                        resource_dict['OrderNo'] = orderNo
-                        resource_dict['ID'] = re.search(r'ID:(\d+)', resource).group(1)
-                        resource_dict['CPU'] = re.search(r'CPU:units:<val:"([^"]+)"', resource).group(1)
-                        resource_dict['Memory'] = re.search(r'Memory:quantity:<val:"([^"]+)"', resource).group(1)
-
-                        dictionary_pattern = r'\{Name:(\w+) Quantity:{Val:(\d+)} Attributes:(\[\s*(?:\{(?:Key:\w+ Value:\w+)\}\s*)*\])\}'
-                        storage_items = re.findall(dictionary_pattern, resource)
-                        
-                        gpus=re.search(r'GPU:units:<val:"([^"]+)"', resource)
-                        gpuatr=re.search(r'GPU:units:<val:"[^"]+" > (attributes:<key:"[^"]+" value:"[^"]+" >)', resource)
-
-                        if gpus:
-                            resource_dict['GPUs'] = gpus.group(1)
-                        else:
-                            resource_dict['GPUs']=None
-                        if gpuatr:
-                            resource_dict['GPU type'] =  gpuatr.group(1)
-                        else:
-                            resource_dict['GPU type'] =None
-                                                    
-                        
-                        for idx,storage_item in enumerate(storage_items,1):
-                            name, quantity, attributes = storage_item
-
-                            attributes_data = re.findall(r'\{Key:(\w+) Value:(\w+)\}', attributes)
-
-                            resource_dict[f'Stor_name_{idx}'] = name
-                            resource_dict[f'Stor_qty_{idx}'] = quantity
+                resources = re.findall(r'Resources:{([^}]*(?:(?!Resources:).)*)}', resource_data)
+                if resources:
+                    for resource in resources:
+                        try:
+                            resource_dict = {}
                             
-                            if not attributes_data:
-                                resource_dict[f'Stor_attr_{idx}']=None
+                            resource_dict['Timestamp'] = timestamp
+                            resource_dict['OrderNo'] = orderNo
+                            resource_dict['ID'] = re.search(r'ID:(\d+)', resource).group(1)
+                            resource_dict['CPU'] = re.search(r'CPU:units:<val:"([^"]+)"', resource).group(1)
+                            resource_dict['Memory'] = re.search(r'Memory:quantity:<val:"([^"]+)"', resource).group(1)
+
+                            dictionary_pattern = r'\{Name:(\w+) Quantity:{Val:(\d+)} Attributes:(\[\s*(?:\{(?:Key:\w+ Value:\w+)\}\s*)*\])\}'
+                            storage_items = re.findall(dictionary_pattern, resource)
+                            
+                            gpus=re.search(r'GPU:units:<val:"([^"]+)"', resource)
+                            gpuatr=re.search(r'GPU:units:<val:"[^"]+" > (attributes:<key:"[^"]+" value:"[^"]+" >)', resource)
+
+                            if gpus:
+                                resource_dict['GPUs'] = gpus.group(1)
                             else:
-                                resource_dict[f'Stor_attr_{idx}'] = attributes_data
+                                resource_dict['GPUs']=None
+                            if gpuatr:
+                                resource_dict['GPU type'] =  gpuatr.group(1)
+                            else:
+                                resource_dict['GPU type'] =None
+                                                        
+                            
+                            for idx,storage_item in enumerate(storage_items,1):
+                                name, quantity, attributes = storage_item
+
+                                attributes_data = re.findall(r'\{Key:(\w+) Value:(\w+)\}', attributes)
+
+                                resource_dict[f'Stor_name_{idx}'] = name
+                                resource_dict[f'Stor_qty_{idx}'] = quantity
+                                
+                                if not attributes_data:
+                                    resource_dict[f'Stor_attr_{idx}']=None
+                                else:
+                                    resource_dict[f'Stor_attr_{idx}'] = attributes_data
 
 
-                        resource_dicts.append(resource_dict)
+                            resource_dicts.append(resource_dict)
 
-                    except Exception as e:
-                        print(f'Exception2: ', e)
-                        break
+                        except Exception as e:
+                            print(f'Exception2: ', e)
+                            break
 
 
-                df = pd.DataFrame(resource_dicts)
+                    df = pd.DataFrame(resource_dicts)
 
-                df.to_csv(output_path, index=False)
-            else:
-                messagebox.showerror("Log file empty")
+                    df.to_csv(output_path, index=False)
+                else:
+                    messagebox.showerror("Log file empty")
+                    exit()
 
 
     def browse_files(self):
@@ -106,11 +111,16 @@ class GetLog:
 
         file_source = tk.messagebox.askquestion("File Source", "Pull file from remote server?", icon='question')
         if file_source == 'yes':  
-            try:
-                file = self.pullFromScp()
-            except Exception as e:
-                messagebox.showerror("Error:",e)
-                return None
+            
+            # TODO iterate through the list of log files and read them all
+            self.listRemoteFiles()
+            for i in self.listOfFiles:
+                try:
+                    file = self.pullFromScp(i)
+                    print(file)
+                except Exception as e:
+                    messagebox.showerror("Error pulling files:",e)
+                    return None
 
         else:  # Local file
             file_path = filedialog.askopenfilename(title="Select Input Text File (Local file)", filetypes=[("Text files", "*.txt")])
@@ -134,14 +144,20 @@ class GetLog:
         self.extract_resources(file, output_path)
         messagebox.showinfo("Extraction completed and saved to", output_path)
 
-    def pullFromScp(self):
-        try:
-            self.remote_file = self.sftp_client.open(variables.logpath, 'r')
+    def pullFromScp(self,i):
+        try:            
+            self.remote_file = self.sftp_client.open(variables.logpath+i, 'r')
             return self.remote_file
 
         except Exception as e:
             messagebox.showerror("Error:", e)
         return None, None
+    
+    def listRemoteFiles(self):
+        try:
+            self.listOfFiles=self.sftp_client.listdir(variables.logpath)
+        except Exception as e:
+            messagebox.showerror("Error:", e)
 
     def close(self):
         if self.remote_file is not None:
@@ -156,7 +172,7 @@ def main():
     try:
         log=GetLog()
         log.browse_files()
-        log.close()      
+        log.close()     
 
         exit()
     except Exception as e:
